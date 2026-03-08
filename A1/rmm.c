@@ -9,6 +9,11 @@ SCIPER		: Your SCIPER numbers
 #include <stdio.h>
 #include <stdlib.h>
 #include "utility.h"
+#include <omp.h>
+
+int min(int a, int b) {
+    return (a < b) ? a : b;
+}
 
 int main(int argc, char *argv[]) {
     if(argc != 6) {
@@ -44,15 +49,36 @@ int main(int argc, char *argv[]) {
 
     /* Step 3: Computes the matrix C as the RMM of matrices A and B. */
     /* Parallelize and optimize this part only! */
+    omp_set_num_threads(num_threads);
     printf("Starting Computation...\n");
     set_clock();
-    for(int idx = 0; idx < M/2; idx++) {
-        for(int jdx = 0; jdx < K/2; jdx++) {
-            matC[idx][jdx] = 0;
-            for(int aoff = 0; aoff < 2; aoff++) {
-                for(int boff = 0; boff < 2; boff++) {
-                    for(int kdx = 0; kdx < N; kdx++) {
-                        matC[idx][jdx] += matA[idx*2 + aoff][kdx] * matB[kdx][jdx*2 + boff];
+    int block_size = 64;
+    #pragma omp parallel for
+    // Looping over blocks in C
+    for(int idx = 0; idx < (M/2); idx+= block_size) {
+        int idx_end = min(idx + block_size, M/2);
+        for(int jdx = 0; jdx < (K/2); jdx+= block_size) {
+            int jdx_end = min(jdx + block_size, K/2);
+
+            for (int i = idx; i < idx_end; i++) {
+                for (int j = jdx; j < jdx_end; j++) {
+                    matC[i][j] = 0;
+                }
+            }
+
+            // Looping over inner blocks in A and B
+            for(int bidxi = 0; bidxi < N; bidxi+= block_size){
+                    int bidxi_end = min(bidxi + block_size, N);
+                    // Looping over locations inside C block
+                    for(int cbidxi = idx; cbidxi < idx_end; cbidxi++){
+                        for(int cbidxj = jdx; cbidxj < jdx_end; cbidxj++){
+                            for(int aoff = 0; aoff < 2; aoff++) {
+                                for(int boff = 0; boff < 2; boff++) {
+                                    for(int kdx = 0; kdx < bidxi_end - bidxi; kdx++) {
+                                        matC[cbidxi][cbidxj] += matA[cbidxi*2 + aoff][bidxi + kdx] * matB[bidxi +kdx][cbidxj*2 + boff];
+                                    }
+                                }
+                            }
                     }
                 }
             }
