@@ -1,6 +1,6 @@
 /*
 ============================================================================
-Filename    : pi.c
+Filename    : sharing.c
 Author      : Your names goes here
 SCIPER		: Your SCIPER numbers
 ============================================================================
@@ -9,6 +9,7 @@ SCIPER		: Your SCIPER numbers
 #include <stdio.h>
 #include <stdlib.h>
 #include "utility.h"
+#include <omp.h>
 
 int perform_buckets_computation(int, int, int);
 
@@ -34,11 +35,25 @@ int main (int argc, const char *argv[]) {
 /* Parallelize and optimise this function */
 int perform_buckets_computation(int num_threads, int num_samples, int num_buckets) {    
     volatile int *histogram = (int*) calloc(num_buckets, sizeof(int));
-    rand_gen generator = init_rand(0);
-    for(int i = 0; i < num_samples; i++){
-        int val = next_rand(generator) * num_buckets;
-        histogram[val]++;
+    volatile int (*tmp_hist)[num_buckets] = calloc(num_threads, sizeof(*tmp_hist));
+
+    omp_set_num_threads(num_threads);
+    #pragma omp parallel
+    {
+        rand_gen generator = init_rand(omp_get_thread_num());
+        #pragma omp for
+        for(int i = 0; i < num_samples; i++){
+            int val = next_rand(generator) * num_buckets;
+            tmp_hist[omp_get_thread_num()][val] ++;
+        }
+        free_rand(generator);
+        #pragma omp for
+        for(int i = 0; i < num_buckets; i++){
+           for(int tid = 0; tid < num_threads; tid++){
+               histogram[i] += tmp_hist[tid][i];
+            }
+       }
     }
-    free_rand(generator);
+
     return 0;
 }
