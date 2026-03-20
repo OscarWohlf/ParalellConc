@@ -1,8 +1,8 @@
 /*
 ============================================================================
 Filename    : sharing.c
-Author      : Your names goes here
-SCIPER		: Your SCIPER numbers
+Author      : Pablo Sarró Sánchez and Oscar Wohlfahrt
+SCIPER		: 416086 and XXXXXX
 ============================================================================
 */
 

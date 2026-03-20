@@ -1,8 +1,8 @@
 /*
 ============================================================================
 Filename    : integral.c
-Authors     : Oscar Wohlfahrt and Pablo Sarró Sánchez
-SCIPERs		: XXXXXX and 416086
+Authors     : Pablo Sarró Sánchez and Oscar Wohlfahrt
+SCIPERs		: 416086 and XXXXXX
 ============================================================================
 */
 
