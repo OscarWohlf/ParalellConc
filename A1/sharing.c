@@ -11,7 +11,6 @@ SCIPER		: 416086 and XXXXXX
 #include "utility.h"
 #include <omp.h>
 
-#define MAX_BUCKETS 2048
 #define CACHE_SIZE 64
 
 int perform_buckets_computation(int, int, int);
@@ -37,23 +36,15 @@ int main (int argc, const char *argv[]) {
 
 /* Parallelize and optimise this function */
 int perform_buckets_computation(int num_threads, int num_samples, int num_buckets) {    
-    /* To avoid false sharing, we would like each "temporary histogram" (the hist where
-    each thread would be writing in) to be allocated in DIFFERENT CACHE LINES. This can be done by
-    rounding the number of bytes needed per thread up to the nearest multiple of 64 (memory size of
-    a cache line), and so in this way, no two temporary histograms will share any cache line --> no false sharing. */
-
-    // int bytes_per_thread = num_buckets*sizeof(int);
-    // int cache_lines_per_thread = (bytes_per_thread-1)/64 + 1; // Equivalent to ceil(by_per_thrd/64), from math.h
-    // int total_bytes_per_thread = 64*cache_lines_per_thread;
-    // int alloc_buckets_per_thread = total_bytes_per_thread / sizeof(int);
     
-    int *histogram = (int*) calloc(num_buckets, sizeof(int)); // volatile not needed, since only one thread at a time writes to the "global" histogram.
+    int bytes_per_thread = num_buckets * sizeof(int);
+    int cache_lines_per_thread = (bytes_per_thread-1) / CACHE_SIZE + 1; // Equivalent to ceil(by_per_thrd/64), from math.h
+    int total_bytes_per_thread = CACHE_SIZE*cache_lines_per_thread;
+    int alloc_buckets_per_thread = total_bytes_per_thread / sizeof(int);
     
-    typedef struct { //new
-        int buckets[MAX_BUCKETS]; //new
-        int padding[CACHE_SIZE/sizeof(int)]; // this introduces an extra "unused" memory that exactly corresponds to a cache line size, ensuring cache line separation between threads.
-    } PaddedRow; //new
-    PaddedRow *tmp_hist = calloc(num_threads, sizeof(PaddedRow)); //new
+    int *histogram = (int*) calloc(num_buckets, sizeof(int));
+    int *tmp_hist = NULL;
+    posix_memalign((void **)&tmp_hist, CACHE_SIZE, num_threads * total_bytes_per_thread);
 
     // Memory allocation check:
     if (!histogram || !tmp_hist) { 
@@ -66,8 +57,13 @@ int perform_buckets_computation(int num_threads, int num_samples, int num_bucket
     #pragma omp parallel
     {
         int thread_id = omp_get_thread_num();
-        int *thread_tmp_hist_row = tmp_hist[thread_id].buckets; //new
+        int *thread_tmp_hist_row = tmp_hist + thread_id * alloc_buckets_per_thread;
         rand_gen generator = init_rand(thread_id);
+
+        // Initialise memory to 0.
+        for (int i = 0; i < alloc_buckets_per_thread; i++) {
+            thread_tmp_hist_row[i] = 0;
+        }
 
         #pragma omp for
         for(int i = 0; i < num_samples; i++){
@@ -77,7 +73,7 @@ int perform_buckets_computation(int num_threads, int num_samples, int num_bucket
         free_rand(generator);
         #pragma omp single
         for(int thread_id = 0; thread_id < num_threads; thread_id++){
-            int *thread_tmp_hist_row = tmp_hist[thread_id].buckets; //new
+            int *thread_tmp_hist_row = tmp_hist + thread_id * alloc_buckets_per_thread;
             for(int i = 0; i < num_buckets; i++){
                histogram[i] += thread_tmp_hist_row[i];
             }
