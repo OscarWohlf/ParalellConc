@@ -1,5 +1,5 @@
 
-CC = gcc-15
+CC = gcc
 CFLAGS = -std=gnu99 -O3 -fopenmp -Wall
 
 all: pi integral sharing rmm
