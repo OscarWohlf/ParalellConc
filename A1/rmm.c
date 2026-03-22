@@ -1,8 +1,6 @@
 /*
 ============================================================================
-Filename    : rmm.c
-Author      : Your names goes here
-SCIPER		: Your SCIPER numbers
+Filename    : rmm_loop_fair.c
 ============================================================================
 */
 
@@ -11,17 +9,12 @@ SCIPER		: Your SCIPER numbers
 #include "utility.h"
 #include <omp.h>
 
-int min(int a, int b) {
-    return (a < b) ? a : b;
-}
-
 int main(int argc, char *argv[]) {
     if(argc != 6) {
         printf("Usage: %s <nthreads> <M> <N> <K> <0|1>\n", argv[0]);
         return 1;
     }
-    
-    /* Step 1: Read the values of M, N and K from the command line arguments. */
+
     int num_threads = atoi(argv[1]);
     int M = atoi(argv[2]);
     int N = atoi(argv[3]);
@@ -33,63 +26,54 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* Step 2: Generates and initializes matrices A and B with random values. */
     int *matA[M];
     int *matB[N];
     int *matC[M/2];
 
     init_mat(matA, M, N, 0);
-    init_mat(matB, N, K, 1);        
-    init_mat(matC, M/2, K/2, -1);   // -1 indicates that matrix is initialized with 0s
+    init_mat(matB, N, K, 1);
+    init_mat(matC, M/2, K/2, -1);
 
     if(debug) {
         display_matrix(matA, M, N, "A");
         display_matrix(matB, N, K, "B");
     }
 
-    /* Step 3: Computes the matrix C as the RMM of matrices A and B. */
-    /* Parallelize and optimize this part only! */
-    omp_set_num_threads(num_threads);
     printf("Starting Computation...\n");
     set_clock();
-    int block_size = 64;
-    #pragma omp parallel for
-    // Looping over blocks in C
-    for(int idx = 0; idx < (M/2); idx+= block_size) {
-        int idx_end = min(idx + block_size, M/2);
-        for(int jdx = 0; jdx < (K/2); jdx+= block_size) {
-            int jdx_end = min(jdx + block_size, K/2);
 
-            for (int i = idx; i < idx_end; i++) {
-                for (int j = jdx; j < jdx_end; j++) {
-                    matC[i][j] = 0;
-                }
-            }
+    omp_set_num_threads(num_threads);
 
-            // Looping over inner blocks in A and B
-            for(int bidxi = 0; bidxi < N; bidxi+= block_size){
-                    int bidxi_end = min(bidxi + block_size, N);
-                    // Looping over locations inside C block
-                    for(int cbidxi = idx; cbidxi < idx_end; cbidxi++){
-                        for(int cbidxj = jdx; cbidxj < jdx_end; cbidxj++){
-                            for(int aoff = 0; aoff < 2; aoff++) {
-                                for(int boff = 0; boff < 2; boff++) {
-                                    for(int kdx = 0; kdx < bidxi_end - bidxi; kdx++) {
-                                        matC[cbidxi][cbidxj] += matA[cbidxi*2 + aoff][bidxi + kdx] * matB[bidxi +kdx][cbidxj*2 + boff];
-                                    }
-                                }
-                            }
-                    }
-                }
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < M / 2; i++) {
+        int *c_row  = matC[i];
+        int *a0_row = matA[2 * i];
+        int *a1_row = matA[2 * i + 1];
+
+        for (int k = 0; k < N; k++) {
+            int a0 = a0_row[k];
+            int a1 = a1_row[k];
+            int *b_row = matB[k];
+
+            for (int j = 0; j < K / 2; j++) {
+                int b0 = b_row[2 * j];
+                int b1 = b_row[2 * j + 1];
+
+                c_row[j] += a0 * b0;
+                c_row[j] += a0 * b1;
+                c_row[j] += a1 * b0;
+                c_row[j] += a1 * b1;
             }
         }
     }
+
     double totaltime = elapsed_time();
 
-    /* Step 4: Write matrix C into a csv file matC.csv and exit. */
     printf("Computation Done!\n");
     if(debug)
         display_matrix(matC, M/2, K/2, "C");
     printf("- Using %d threads: matC computed in %.4gs.\n", num_threads, totaltime);
     write_csv(matC, M/2, K/2, "matC.csv");
+
+    return 0;
 }
