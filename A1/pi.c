@@ -1,8 +1,8 @@
 /*
 ============================================================================
 Filename    : pi.c
-Author      : Your names goes here
-SCIPER		: Your SCIPER numbers
+Authors     : Oscar Wohlfahrt and Pablo Sarró Sánchez
+SCIPERs 	: 416820 and 416086
 ============================================================================
 */
 
