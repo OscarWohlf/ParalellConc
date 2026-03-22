@@ -31,7 +31,7 @@ int main (int argc, const char *argv[]) {
     return 0;
 }
 
-/* Parallelize and optimise this function */
+/* Parallelise and optimise this function */
 int perform_buckets_computation(int num_threads, int num_samples, int num_buckets) {    
     int *histogram = (int*) calloc(num_buckets, sizeof(int));
     
