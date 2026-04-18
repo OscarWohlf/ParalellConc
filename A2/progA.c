@@ -1,8 +1,8 @@
 /*
 ============================================================================
 Filename    : progA.c
-Author      : Pablo Sarró Sánchez and Oscar Wohlfahrt
-SCIPER		: 416086 and 416820
+Authors     : Pablo Sarró Sánchez and Oscar Wohlfahrt
+SCIPERs		: 416086 and 416820
 ============================================================================
 */
 

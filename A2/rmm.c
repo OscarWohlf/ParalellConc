@@ -1,8 +1,8 @@
 /*
 ============================================================================
 Filename    : rmm.c
-Author      : Your names goes here
-SCIPER		: Your SCIPER numbers
+Authors     : Pablo Sarró Sánchez and Oscar Wohlfahrt
+SCIPERs		: 416086 and 416820
 ============================================================================
 */
 
