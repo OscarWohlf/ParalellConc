@@ -2,6 +2,8 @@
 /shelf/
 /workspace.xml
 .vscode/
+*.o
+*.csv
 *.job
 *.out
 # Editor-based HTTP Client requests
