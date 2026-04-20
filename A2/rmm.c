@@ -9,6 +9,7 @@ SCIPERs		: 416086 and 416820
 #include <stdio.h>
 #include <stdlib.h>
 #include "utility.h"
+#include <mpi.h>
 
 int main(int argc, char *argv[]) {
     if(argc != 5) {
