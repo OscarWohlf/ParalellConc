@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 
         } else {
             int *local_in = malloc(num_items_proc * sizeof(int));
-            int *local_out   = calloc(size, sizeof(int));
+            int *local_out = calloc(size, sizeof(int));
             for (int item = 0; item < num_items_proc; item += B1) {
                 int num_recv = B1;
                 if (item + num_recv > num_items_proc) {
