@@ -1,7 +1,7 @@
 CC = mpicc
 CFLAGS = -std=gnu99 -O3 -Wall
 
-TARGETS = prog0 progA progB rmm
+TARGETS = prog0 progA progB progC rmm
 
 all: $(TARGETS)
 
@@ -12,6 +12,9 @@ progA: progA.c function.h utility.h
 	$(CC) $(CFLAGS) $< -o $@ $(LDLIBS)
 
 progB: progB.c function.h utility.h
+	$(CC) $(CFLAGS) $< -o $@ $(LDLIBS)
+
+progC: progC.c function.h utility.h
 	$(CC) $(CFLAGS) $< -o $@ $(LDLIBS)
 
 rmm: rmm.c utility.h
