@@ -16,7 +16,7 @@ int main(int argc, char *argv[]) {
     int nrounds, size, B1, B2;
 
     /* Parse input arguments */
-    if(argc != 5) {
+    if (argc != 5) {
         printf("Invalid input! Usage: ./progC <nrounds> <size> <B1> <B2>\n");
         return 1;
     } else {
@@ -48,14 +48,19 @@ int main(int argc, char *argv[]) {
     int first_item = (rank-1) * chunk_size;
     int num_items_proc = (rank == nprocs-1) ? size - first_item : chunk_size;
     int *new_model = malloc(size * sizeof(int));
-    
     set_clock();
+    
     for(int round = 0; round < nrounds; round++) {
         // -------------------- SERVER (rank == 0) -------------------- //
         if (rank == 0) {
             // ---------------- SEND (to workers) ---------------- //
-            // Request array
-            int num_send_chunks = (size + B1 - 1) / B1; // = ceil(size / B1)
+            // Pre-calculate total number of send chunks needed
+            int num_send_chunks = 0;
+            for (int proc = 1; proc < nprocs; proc++) {
+                int proc_first_item = (proc-1) * chunk_size;
+                int proc_num_items = (proc == nprocs-1) ? size - proc_first_item : chunk_size;
+                num_send_chunks += (proc_num_items + B1 - 1) / B1;
+            }
             MPI_Request *req_send = malloc(num_send_chunks * sizeof(MPI_Request));
             int r_send = 0;
             // Post all sends
@@ -76,21 +81,15 @@ int main(int argc, char *argv[]) {
                     r_send++;
                 }
             }
-            // Wait for all sends to complete
-            MPI_Waitall(r_send, req_send, MPI_STATUSES_IGNORE);
-
-            // ---------------- COMPUTE (on local data) ---------------- //
-            for (int i = 0; i < size; i++) {
-                new_model[i] = model[i];
-            }
 
             // ---------------- RECEIVE (from workers) ---------------- //
             // Request and buffer array (latter to send data in chunks)
             int num_recv_chunks = (size + B2 - 1) / B2; // = ceil(size / B2)
-            int total_recv_chunks = (nprocs - 1) * num_recv_chunks;  // accounting for all workers
+            int total_recv_chunks = (nprocs - 1) * num_recv_chunks; // accounting for all workers
             MPI_Request *req_recv = malloc(total_recv_chunks * sizeof(MPI_Request));
-            int **buffers = malloc(total_recv_chunks * sizeof(int*));
+            int *recv_data = malloc(total_recv_chunks * B2 * sizeof(int));
             int r_recv = 0;
+
             // Post all receives
             for (int proc = 1; proc < nprocs; proc++) {
                 for (int item = 0; item < size; item += B2) {
@@ -98,16 +97,23 @@ int main(int argc, char *argv[]) {
                     if (item + num_recv > size) {
                         num_recv = size - item;
                     }
-                    buffers[r_recv] = malloc(num_recv * sizeof(int));
                     
                     MPI_Irecv(
-                        buffers[r_recv], num_recv, MPI_INT,
+                        &recv_data[r_recv * B2], num_recv, MPI_INT,
                         proc, 2, MPI_COMM_WORLD, &req_recv[r_recv]
                     );
                     r_recv++;
                 }
             }
-            // Wait for all receives to complete
+
+            // ---------------- COMPUTE (on local data) ---------------- //
+            // Without waiting.
+            for (int i = 0; i < size; i++) {
+                new_model[i] = model[i];
+            }
+
+            // Wait for all sends and receives to complete
+            MPI_Waitall(r_send, req_send, MPI_STATUSES_IGNORE);
             MPI_Waitall(r_recv, req_recv, MPI_STATUSES_IGNORE);
 
             // Process received data
@@ -119,20 +125,17 @@ int main(int argc, char *argv[]) {
                         num_recv = size - item;
                     }
                     for (int i = item; i < item + num_recv; i++) {
-                        new_model[i] += buffers[k][i - item];
+                        new_model[i] += recv_data[k*B2 + (i - item)];
                     }
                     k++;
                 }
             }
 
             // Free memory
-            for (int i = 0; i < r_recv; i++) {
-                free(buffers[i]);
-            }
-            free(buffers);
             free(req_send);
             free(req_recv);
-
+            free(recv_data);
+            
             int *tmp = model;
             model = new_model;
             new_model = tmp;
@@ -142,10 +145,12 @@ int main(int argc, char *argv[]) {
             // ---------------- RECEIVE (from server) ---------------- //
             int *local_in = malloc(num_items_proc * sizeof(int));
             int *local_out = calloc(size, sizeof(int));
+
             // Request array
             int num_chunks_recv = (num_items_proc + B1 - 1) / B1; // = ceil(num_items_proc / B1)
             MPI_Request *req_recv = malloc(num_chunks_recv * sizeof(MPI_Request));
             int r_recv = 0;
+
             // Post all receives
             for (int item = 0; item < num_items_proc; item += B1) {
                 int num_recv = B1;
@@ -159,6 +164,7 @@ int main(int argc, char *argv[]) {
                 );
                 r_recv++;
             }
+
             // Wait for all receives to complete
             MPI_Waitall(r_recv, req_recv, MPI_STATUSES_IGNORE);
 
@@ -184,14 +190,15 @@ int main(int argc, char *argv[]) {
                 );
                 r_send++;
             }
+
             // Wait for all sends to complete
             MPI_Waitall(r_send, req_send, MPI_STATUSES_IGNORE);
             
             // Free memory
             free(local_in);
             free(local_out);
-            free(req_recv);
             free(req_send);
+            free(req_recv);
         }
     }
 
