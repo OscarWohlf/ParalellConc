@@ -78,9 +78,6 @@ int main(int argc, char *argv[]) {
         printf("Starting Computation...\n");
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    set_clock();
-
     int rows_each_proc = M / 2 / nprocs;
     int rows_left = M / 2 % nprocs;
     int num_rows_c_local = rows_each_proc + (rank < rows_left ? 1 : 0);
@@ -101,10 +98,28 @@ int main(int argc, char *argv[]) {
         }
     }
 
+
+    int *C_recv_count = malloc(nprocs * sizeof(int));
+    int *C_disp = malloc(nprocs * sizeof(int));
+    if (rank == 0) {
+        for (int curr_rank = 0; curr_rank < nprocs; curr_rank++) {
+            int rank_rows = rows_each_proc + (curr_rank < rows_left ? 1 : 0);
+            int rank_start_c = curr_rank * rows_each_proc + (curr_rank < rows_left ? curr_rank : rows_left);
+            C_recv_count[curr_rank] = rank_rows * (K / 2);
+            C_disp[curr_rank] = rank_start_c * (K / 2);
+        }
+    }
+
+    int *flatC = malloc((M / 2) * (K / 2) * sizeof(int));;
+
+    omp_set_num_threads(num_threads);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    set_clock();
     MPI_Scatterv(flatA, A_num_send, A_disp, MPI_INT, localA, 2 * num_rows_c_local * N, MPI_INT,0, MPI_COMM_WORLD);
     MPI_Bcast(flatB, N * K, MPI_INT, 0, MPI_COMM_WORLD);
 
-    omp_set_num_threads(num_threads);
+
 
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < num_rows_c_local; i++) {
@@ -130,22 +145,13 @@ int main(int argc, char *argv[]) {
     }
 
 
-    int *C_recv_count = malloc(nprocs * sizeof(int));
-    int *C_disp = malloc(nprocs * sizeof(int));
-    if (rank == 0) {
-        for (int curr_rank = 0; curr_rank < nprocs; curr_rank++) {
-            int rank_rows = rows_each_proc + (curr_rank < rows_left ? 1 : 0);
-            int rank_start_c = curr_rank * rows_each_proc + (curr_rank < rows_left ? curr_rank : rows_left);
-            C_recv_count[curr_rank] = rank_rows * (K / 2);
-            C_disp[curr_rank] = rank_start_c * (K / 2);
-        }
-    }
-
-    int *flatC = malloc((M / 2) * (K / 2) * sizeof(int));;
-
     MPI_Gatherv(localC, num_rows_c_local * (K / 2), MPI_INT,
             flatC, C_recv_count, C_disp, MPI_INT,
             0, MPI_COMM_WORLD);
+
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    double totaltime = elapsed_time();
 
     if (rank == 0) {
         for (int i = 0; i < (M / 2); i++) {
@@ -154,9 +160,6 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-
-    MPI_Barrier(MPI_COMM_WORLD);
-    double totaltime = elapsed_time();
 
     if (rank==0) {
         printf("Computation Done!\n");

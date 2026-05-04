@@ -23,7 +23,6 @@ rmm: rmm.c utility.h
 rmm_openmp_mpi: rmm_openmp_mpi.c utility.h
 	$(CC) $(CFLAGS) $< -o $@ $(LDLIBS)
 
-
 clean:
 	rm -f $(TARGETS) *.o
 
