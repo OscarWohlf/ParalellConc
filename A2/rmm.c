@@ -32,8 +32,10 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
     if(M % 2 != 0 || N % 2 != 0 || K % 2 != 0) {
-        printf("M, N and K must be even\n");
-        return 1;
+        if(rank == 0) {
+            printf("M, N and K must be even\n");
+        }
+        MPI_Finalize();
     }
 
     // ----------- 2. GENERATE A, B AND DISTRIBUTE DATA ----------- //
