@@ -63,20 +63,16 @@ int main(int argc, char *argv[]) {
     set_clock();
     
     for(int round = 0; round < nrounds; round++) {
-        // 1. Send rank=0's model to all others in chunks (also allowing rank=0 itself to compute)
         MPI_Scatterv(
             model, counts, displs, MPI_INT,
             local_in, local_size, MPI_INT,
             0, MPI_COMM_WORLD
         );
-        // printf("Rank %d first element: %d\n", rank, local_in[0]);
 
-        // 2. Reset local output
         for (int i = 0; i < size; i++) {
             local_out[i] = 0;
         }
 
-        // 3. Compute on local data
         compute(local_in, local_out, local_size, size);
 
         if (rank == 0) {
@@ -85,14 +81,12 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        // 4. Reduce local contributions
         MPI_Reduce(
             local_out, new_model,
             size, MPI_INT, MPI_SUM,
             0, MPI_COMM_WORLD
         );
 
-        // 5. Swap buffers on rank=0
         if (rank == 0) {
             for (int i = 0; i < size; i++) {
                 new_model[i] += model[i];

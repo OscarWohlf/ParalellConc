@@ -50,11 +50,16 @@ int main(int argc, char *argv[]) {
     
     set_clock();
     for(int round = 0; round < nrounds; round++) {
-        // -------------------- SERVER (rank == 0) -------------------- //
         if (rank == 0) {
-            
-            // ---------------- SEND (to workers) ---------------- //
-            MPI_Request *send_reqs = malloc((nprocs - 1) * (chunk_size + B1 - 1) / B1 * sizeof(MPI_Request)); // Slightly over-allocate for safety
+
+            int max_send_reqs = 0;
+            for (int proc = 1; proc < nprocs; proc++) {
+                int start = (proc - 1) * chunk_size;
+                int count = (proc == nprocs - 1) ? size - start : chunk_size;
+                max_send_reqs += (count + B1 - 1) / B1;
+            }
+
+            MPI_Request *send_reqs = malloc(max_send_reqs * sizeof(MPI_Request)); // Slightly over-allocate for safety
             int req_idx = 0;
             
             for (int proc = 1; proc < nprocs; proc++) {
@@ -75,8 +80,7 @@ int main(int argc, char *argv[]) {
             }
             int num_send_reqs = req_idx;
 
-            // ---------------- COMPUTE ---------------- //
-            // Initialise new model while sends are in flight
+            // Initialise new model
             for (int i = 0; i < size; i++) {
                 new_model[i] = model[i];
             }
@@ -86,14 +90,14 @@ int main(int argc, char *argv[]) {
                 MPI_Waitall(num_send_reqs, send_reqs, MPI_STATUSES_IGNORE);
             }
 
-            // ---------------- RECEIVE (from workers) ---------------- //
-            // Use sliding window to avoid a large number of (expensive) requests
-            int *recv_buf = malloc(B2 * sizeof(int)); // Only 1 chunk per worker at a time
-            int window_size = nprocs-1; // Length of sliding window
-            MPI_Request *recv_reqs = malloc(window_size * sizeof(MPI_Request)); // One request per chunk per worker (hence, n_workers=nprocs-1 requests)
-            int *recv_items = malloc(window_size * sizeof(int)); // Saving the item positions for each worker's chunk
-            int *recv_src = malloc(window_size * sizeof(int));   // Saving the ranks of each chunk
-            int *next_item = calloc(nprocs, sizeof(int));   // Next position to receive from each worker
+            // Use sliding window to avoid a large number of requests
+            int window_size = nprocs-1;
+            int *recv_bufs = malloc(window_size * B2 * sizeof(int));
+
+            MPI_Request *recv_reqs = malloc(window_size * sizeof(MPI_Request));
+            int *recv_items = malloc(window_size * sizeof(int));
+            int *recv_src = malloc(window_size * sizeof(int));
+            int *next_item = calloc(nprocs, sizeof(int));
             
             int num_chunks_per_worker = (size + B2 - 1) / B2;
             int total_recvs = (nprocs-1) * num_chunks_per_worker;
@@ -105,7 +109,7 @@ int main(int argc, char *argv[]) {
                     num_recv = size;
                 }
                 MPI_Irecv(
-                    recv_buf, num_recv, MPI_INT, 
+                    &recv_bufs[(proc - 1) * B2], num_recv, MPI_INT,
                     proc, 2, MPI_COMM_WORLD, &recv_reqs[proc-1]
                 );
                 recv_items[proc-1] = 0;
@@ -126,7 +130,7 @@ int main(int argc, char *argv[]) {
                 
                 // Aggregate received data
                 for (int k = 0; k < num_recv; k++) {
-                    new_model[item + k] += recv_buf[k];
+                    new_model[item + k] += recv_bufs[idx * B2 + k];
                 }
                 
                 next_item[proc] = item + num_recv;
@@ -138,7 +142,7 @@ int main(int argc, char *argv[]) {
                         next_recv = size - next_item[proc];
                     }
                     MPI_Irecv(
-                        recv_buf, next_recv, MPI_INT,
+                        &recv_bufs[idx * B2], next_recv, MPI_INT,
                         proc, 2, MPI_COMM_WORLD, &recv_reqs[idx]
                     );
                     recv_items[idx] = next_item[proc];
@@ -146,7 +150,7 @@ int main(int argc, char *argv[]) {
                 }
             }
             
-            free(recv_buf);
+            free(recv_bufs);
             free(recv_reqs);
             free(recv_items);
             free(recv_src);
@@ -156,11 +160,8 @@ int main(int argc, char *argv[]) {
             int *tmp = model;
             model = new_model;
             new_model = tmp;
-
-        // -------------------- WORKERS (rank > 0) -------------------- //
         } else {
 
-            // ---------------- RECEIVE (from server) ---------------- //
             int *local_in = malloc(num_items_proc * sizeof(int));
             int *local_out = calloc(size, sizeof(int));
 
@@ -186,10 +187,8 @@ int main(int argc, char *argv[]) {
                 MPI_Waitall(num_recv_reqs, recv_reqs, MPI_STATUSES_IGNORE);
             }
 
-            // ---------------- COMPUTE (on local data) ---------------- //
             compute(local_in, local_out, num_items_proc, size);
 
-            // ---------------- SEND (to server) ---------------- //
             int max_send_reqs = (size + B2 - 1) / B2; // = ceil(size / B2)
             MPI_Request *send_reqs = malloc(max_send_reqs * sizeof(MPI_Request));
             int send_idx = 0;
@@ -225,12 +224,7 @@ int main(int argc, char *argv[]) {
         printf("- Using %d procs for %d iterations on %d size: %.3gs.\n", nprocs, nrounds, size, totaltime);
         write_csv(&model, 1, size, "model.csv");
     }
-    
-    // long long checksum = 0;
-    // for (int i = 0; i < size; i++) checksum += model[i];
-    
-    // if (rank == 0) printf("CHECKSUM: %lld\n", checksum);
-        
+
     free(model);
     free(new_model);
     MPI_Finalize();

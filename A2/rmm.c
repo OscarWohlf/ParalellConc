@@ -19,8 +19,7 @@ int main(int argc, char *argv[]) {
 
     // Initialise MPI
     MPI_Init(&argc, &argv);
-    
-    // --------- 1. READ COMMAND LINE ARGS ------------- //
+
     int M = atoi(argv[1]);
     int N = atoi(argv[2]);
     int K = atoi(argv[3]);
@@ -38,8 +37,6 @@ int main(int argc, char *argv[]) {
         MPI_Finalize();
     }
 
-    // ----------- 2. GENERATE A, B AND DISTRIBUTE DATA ----------- //
-
     int *matA[M];
     int *matB[N];
     int *matC[M/2];
@@ -51,18 +48,17 @@ int main(int argc, char *argv[]) {
         init_mat(matC, M/2, K/2, -1);
     }
 
-    // Flatten A, for easier scattering (since matA is non-contiguous in memory).
+    // Flatten A, for easier scattering
     int *A_flat = NULL;
-    if(rank == 0) { // A is flattened only on rank 0, since other processes will receive the info via MPI_Scatterv.
+    if(rank == 0) {
         A_flat = (int *)malloc(M * N * sizeof(int));
-        // Copy non-contiguous matA into contiguous A_flat
         for(int i = 0; i < M; i++) {
             for(int j = 0; j < N; j++) {
                 A_flat[i*N + j] = matA[i][j];
             }
         }
     }
-    // Also flatten B for better cache performance (cache locality) when accessing the values during RMM computation.
+    // Flatten B for better cache performance
     int *B_flat = (int *)malloc(N * K * sizeof(int));
     if(rank == 0) {
         for(int i = 0; i < N; i++) {
@@ -79,15 +75,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // -------------- 3. COMPUTE RMM ------------------ //
-
-    // Ensure all processes are ready to start the computation before starting the clock.
     MPI_Barrier(MPI_COMM_WORLD);
     set_clock();
 
-    // --------------- 3.1 SCATTER A'S ROWS ----------------- //
-
-    // Input args 2 & 3: Send counts (n_elems to be received x proc) and displacements (starting idx of elems to be sent to each proc)
     int* sendcounts = NULL;
     int* displs = NULL;
     int total_rows = M / 2;
@@ -99,20 +89,19 @@ int main(int argc, char *argv[]) {
         sendcounts = (int *)malloc(nprocs * sizeof(int));
         displs = (int *)malloc(nprocs * sizeof(int));
         for(int p = 0; p < nprocs; p++) {
-            if (p < remaining_unasign_rows) { // we will assign an extra row to the first 'remaining_unasign_rows' processes, to ensure all of A's rows are covered
-                p_rows = rows_per_proc + 1; // Number of rows given to each process (with the extra one)
+            if (p < remaining_unasign_rows) {
+                p_rows = rows_per_proc + 1;
             } else {
-                p_rows = rows_per_proc; // Number of rows now is just the previous number (no extra)
+                p_rows = rows_per_proc;
             }
-            sendcounts[p] = 2 * p_rows * N; // We need to send pairs of rows (RMM) and each row of A has N elements.
+            sendcounts[p] = 2 * p_rows * N;
             if (p == 0) {
-                displs[p] = 0; // First process starts at the beginning of the array
+                displs[p] = 0;
             } else {
-                displs[p] = displs[p-1] + sendcounts[p-1]; // Starting index for process p is the previous displacement + previous count
-            }
+                displs[p] = displs[p-1] + sendcounts[p-1];
         }
     }
-    // Input arg 5: Receive buffer (need to recalculate the rows per each rank/processor)
+
     int local_rows;
     if (rank < remaining_unasign_rows) {
         local_rows = rows_per_proc + 1;
@@ -120,8 +109,7 @@ int main(int argc, char *argv[]) {
         local_rows = rows_per_proc;
     }
     int *A_recv = (int *)malloc(2 * local_rows * N * sizeof(int));
-    // Input arg 6: Receive count (number of elements to be received)
-    int recvcount = 2 * local_rows * N; // Explained previously.;
+    int recvcount = 2 * local_rows * N;
 
     MPI_Scatterv(
         A_flat, sendcounts, displs, 
@@ -129,13 +117,10 @@ int main(int argc, char *argv[]) {
         MPI_INT, 0, MPI_COMM_WORLD
     );
 
-    // --------------- 3.2 BROADCAST B ----------------- //
     MPI_Bcast(B_flat, N * K, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Allocate space for a local matrix C per each process, which will store the partial results.
-    int *local_C = (int *)calloc(local_rows * (K/2), sizeof(int)); // Flat 1D array.
+    int *local_C = (int *)calloc(local_rows * (K/2), sizeof(int));
 
-    // --------------- 3.3 COMPUTE LOCAL RMM ----------------- //
     if (rank==0) {
         printf("Starting Computation...\n");
     }
@@ -148,8 +133,8 @@ int main(int argc, char *argv[]) {
         for(int n = 0; n < N; n++) {
             int a0 = a0_row[n];
             int a1 = a1_row[n];
-            int *b_row = &B_flat[n * K]; // n-th row of B.
-            int a_sum = a0 + a1; // Precompute a0+a1 sum outside of j loop.
+            int *b_row = &B_flat[n * K];
+            int a_sum = a0 + a1;
 
             for(int k = 0; k < K/2; k++) {
                 int b0 = b_row[k * 2];
@@ -160,31 +145,28 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // ------------- 3.4 GATHER C'S LOCAL RESULTS ------------- //
-
-    // Input arg 2: Send count (n_elems to be sent per proc)
     int sendcount = local_rows * (K/2);
-    // Input arg 4: Receive buffer (flattened C)
+
     int *recvbuf = NULL;
     if(rank == 0) {
         recvbuf = (int *)malloc((M/2) * (K/2) * sizeof(int));
     }
-    // Input arg 5 & 6: Receive counts (n_elems to be received per proc) and displacements (starting idx of elems to be received from each proc)
+
     int* recvcounts = NULL;
-    // displs is reused from previous scatter, hence no need to allocate it again.
+
     if(rank == 0) {
         recvcounts = (int *)malloc(nprocs * sizeof(int));
         for(int p = 0; p < nprocs; p++) {
             if (p < remaining_unasign_rows) {
                 p_rows = rows_per_proc + 1;
             } else {
-                p_rows = rows_per_proc; // Number of rows now is just the previous number (no extra)
+                p_rows = rows_per_proc;
             }
             recvcounts[p] = p_rows * (K/2);
             if (p == 0) {
-                displs[p] = 0; // First process starts at the beginning of the array
+                displs[p] = 0;
             } else {
-                displs[p] = displs[p-1] + recvcounts[p-1]; // Starting index for process p is the previous displacement + previous count
+                displs[p] = displs[p-1] + recvcounts[p-1];
             }
         }
     }
@@ -196,8 +178,6 @@ int main(int argc, char *argv[]) {
     );
 
     double totaltime = elapsed_time();
-
-    // ---------------- 4. WRITE C IN CSV ---------------- //
 
     if (rank==0) {
         for(int i = 0; i < M/2; i++) {

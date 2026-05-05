@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
 
-    /* Initialise model */
+    /* Initialize model */
     int *model = (int*) malloc(size * sizeof(int));
     if (rank == 0) {
         rand_gen generator = init_rand(0);
@@ -48,7 +48,6 @@ int main(int argc, char *argv[]) {
     int *new_model = malloc(size * sizeof(int));
     set_clock();
     for(int round = 0; round < nrounds; round++) {
-        /* Write code to train for N rounds */
         if (rank == 0) {
             for (int proc = 1; proc < nprocs; proc++) {
                 int proc_first_item = (proc - 1) * chunk_size;
