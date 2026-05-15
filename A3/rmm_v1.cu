@@ -29,6 +29,23 @@ void rmm_cpu(int *matA, int *matB, int *matC, int M, int N, int K)
     }
 }
 
+
+__global__ void rmm_kernel(int *matA, int *matB, int *matC, int M, int N, int K) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < ((M / 2) * (K / 2))) {
+        int row = idx / (K / 2);
+        int col = idx % (K/2);
+        matC[row * (K/2) + col] = 0;
+        for(int aoff = 0; aoff < 2; aoff++) {
+            for(int boff = 0; boff < 2; boff++) {
+                for(int kdx = 0; kdx < N; kdx++) {
+                    matC[row*(K/2) + col] += matA[(row*2 + aoff)*N + kdx] * matB[kdx*K + col*2 + boff];
+                }
+            }
+        }
+    }
+}
+
 /* GPU Optimized Function */
 void rmm_gpu(int *matA, int *matB, int *matC, int M, int N, int K)
 {
@@ -92,20 +109,4 @@ void rmm_gpu(int *matA, int *matB, int *matC, int M, int N, int K)
 
     cudaEventElapsedTime(&time, cpy_D2H_start, cpy_D2H_end);
     cout << "Device to Host MemCpy takes " << setprecision(4) << time/1000 << "s" << endl;
-}
-
-__global__ void rmm_kernel(int *matA, int *matB, int *matC, int M, int N, int K) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < ((M / 2) * (K / 2))) {
-        int row = idx / (K / 2);
-        int col = idx % (K/2);
-        matC[row * (K/2) + col] = 0;
-        for(int aoff = 0; aoff < 2; aoff++) {
-            for(int boff = 0; boff < 2; boff++) {
-                for(int kdx = 0; kdx < N; kdx++) {
-                    matC[row*(K/2) + col] += matA[(row*2 + aoff)*N + kdx] * matB[kdx*K + col*2 + boff];
-                }
-            }
-        }
-    }
 }
