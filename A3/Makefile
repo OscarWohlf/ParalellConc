@@ -8,7 +8,7 @@ all: assignment3.o rmm.o
 assignment3.o: assignment3.cu utility.h rmm.o
 	$(NVCC) $(CFLAGS) $< -o $@
 
-rmm.o: rmm.cu
+rmm.o: rmm_v1.cu
 	$(NVCC) $(CFLAGS) $< -o $@
 
 clean:
