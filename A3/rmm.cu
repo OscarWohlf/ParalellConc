@@ -42,24 +42,46 @@ void rmm_gpu(int *matA, int *matB, int *matC, int M, int N, int K)
     cudaEventCreate(&cpy_D2H_end);
 
     /* Preprocessing (if any) goes here */
+    int *matA_d;
+    int *matB_d;
+    int *matC_d;
+    int numThreadsPerBlock, numBlocks;
+
+    cudaMalloc((void**) &matA_d, M * N * sizeof(int));
+    cudaMalloc((void**) &matB_d, K * N * sizeof(int));
+    cudaMalloc((void**) &matC_d, (M/2) * (K/2) * sizeof(int));
 
     cudaEventRecord(cpy_H2D_start);
-    /* Copying array(s) from host to device goes here */
+    /* Copying array(s) from   to device goes here */
+    cudaMemcpy(matA_d, matA, M * N * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(matB_d, matB, N*K * sizeof(int), cudaMemcpyHostToDevice);
+
     cudaEventRecord(cpy_H2D_end);
     cudaEventSynchronize(cpy_H2D_end);
 
     cudaEventRecord(comp_start);
     /* Launching the GPU kernel to do the computation goes here */
+    numThreadsPerBlock = 16 * 16;
+    numBlocks = (M/2 * K/2 + numThreadsPerBlock - 1) / numThreadsPerBlock;
+    rmm_kernel <<< numBlocks, numThreadsPerBlock >>> (matA_d, matB_d, matC_d, M, N ,K);
+
     cudaEventRecord(comp_end);
     cudaEventSynchronize(comp_end);
 
+
+
     cudaEventRecord(cpy_D2H_start);
     /* Copying array(s) from device to host goes here */
+    cudaMemcpy(matC, matC_d, (M/2) * (K/2) * sizeof(int), cudaMemcpyDeviceToHost);
+
     cudaEventRecord(cpy_D2H_end);
     cudaEventSynchronize(cpy_D2H_end);
 
-    /* Postprocessing (if any) goes here */
 
+    /* Postprocessing (if any) goes here */
+    cudaFree(matA_d);
+    cudaFree(matB_d);
+    cudaFree(matC_d);
     /* Display timing statistics */
     float time;
     cudaEventElapsedTime(&time, cpy_H2D_start, cpy_H2D_end);
