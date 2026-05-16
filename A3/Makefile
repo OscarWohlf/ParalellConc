@@ -1,5 +1,6 @@
 NVCC = nvcc
-CFLAGS = -Wno-deprecated-gpu-targets -c -O3
+DEFINES =
+CFLAGS = -Wno-deprecated-gpu-targets -c -O3 $(DEFINES)
 LFLAGS = -Wno-deprecated-gpu-targets -lcudart -lcuda
 
 all: assignment3.o rmm.o
@@ -8,7 +9,7 @@ all: assignment3.o rmm.o
 assignment3.o: assignment3.cu utility.h rmm.o
 	$(NVCC) $(CFLAGS) $< -o $@
 
-rmm.o: rmm_v1.cu
+rmm.o: rmm_v3.cu
 	$(NVCC) $(CFLAGS) $< -o $@
 
 clean:
