@@ -12,6 +12,10 @@ SCIPERs		: 416086 and 416820
 #include <cuda_runtime.h>
 using namespace std;
 
+#ifndef THREADS_PER_BLOCK
+#define THREADS_PER_BLOCK 256
+#endif
+
 /* CPU Baseline */
 void rmm_cpu(int *matA, int *matB, int *matC, int M, int N, int K)
 {
@@ -78,7 +82,7 @@ void rmm_gpu(int *matA, int *matB, int *matC, int M, int N, int K)
 
     cudaEventRecord(comp_start);
     /* Launching the GPU kernel to do the computation goes here */
-    numThreadsPerBlock = 16 * 16;
+    numThreadsPerBlock = THREADS_PER_BLOCK;
     numBlocks = (M/2 * K/2 + numThreadsPerBlock - 1) / numThreadsPerBlock;
     rmm_kernel <<< numBlocks, numThreadsPerBlock >>> (matA_d, matB_d, matC_d, M, N ,K);
 
