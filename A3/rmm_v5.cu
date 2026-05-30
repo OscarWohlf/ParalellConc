@@ -1,6 +1,6 @@
 /*
 ============================================================================
-Filename    : rmm_v1_5.cu
+Filename    : rmm_v4.cu
 Authors     : Pablo Sarró Sánchez and Oscar Wohlfahrt
 SCIPERs		: 416086 and 416820
 ============================================================================
@@ -11,6 +11,10 @@ SCIPERs		: 416086 and 416820
 #include <sys/time.h>
 #include <cuda_runtime.h>
 using namespace std;
+
+#ifndef TILE
+#define TILE 16
+#endif
 
 /* CPU Baseline */
 void rmm_cpu(int *matA, int *matB, int *matC, int M, int N, int K)
@@ -31,21 +35,38 @@ void rmm_cpu(int *matA, int *matB, int *matC, int M, int N, int K)
 
 
 __global__ void rmm_kernel(int *matA, int *matB, int *matC, int M, int N, int K) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < ((M / 2) * (K / 2))) {
-        int row = idx / (K / 2);
-        int col = idx % (K/2);
-        int sum = 0;
-        for(int aoff = 0; aoff < 2; aoff++) {
-            for(int boff = 0; boff < 2; boff++) {
-                for(int kdx = 0; kdx < N; kdx++) {
-                    sum += matA[(row*2 + aoff)*N + kdx] * matB[kdx*K + col*2 + boff];
-                }
-            }
+    __shared__ int tileA[TILE][TILE];
+    __shared__ int tileB[TILE][TILE];
+    int col = blockIdx.x * TILE + threadIdx.x;
+    int row = blockIdx.y * TILE + threadIdx.y;
+    int sum = 0;
+    for (int tileStart = 0; tileStart < N; tileStart += TILE) {
+        if (row < M/2 && tileStart + threadIdx.x < N) {
+            tileA[threadIdx.y][threadIdx.x] = matA[2 * row*N + tileStart+threadIdx.x] + matA[(2 * row + 1)*N + tileStart + threadIdx.x];
         }
-        matC[row*(K/2) + col] = sum;
+        else {
+            tileA[threadIdx.y][threadIdx.x] = 0;
+        }
+        if (col < K/2 && tileStart + threadIdx.y < N) {
+            tileB[threadIdx.y][threadIdx.x] = matB[(tileStart+threadIdx.y)*K + 2 *col] + matB[(tileStart+threadIdx.y)*K + 2 *col + 1];
+        }
+        else {
+            tileB[threadIdx.y][threadIdx.x] = 0;
+        }
+        __syncthreads();
+        for(int kdx = 0; kdx < TILE; kdx++) {
+            sum += tileA[threadIdx.y][kdx] * tileB[kdx][threadIdx.x];
+        }
+
+        __syncthreads();
+        }
+    if (row < M/2 && col < K/2) {
+        matC[row * (K/2) + col] = sum;
     }
 }
+
+
+
 
 /* GPU Optimized Function */
 void rmm_gpu(int *matA, int *matB, int *matC, int M, int N, int K)
@@ -63,7 +84,6 @@ void rmm_gpu(int *matA, int *matB, int *matC, int M, int N, int K)
     int *matA_d;
     int *matB_d;
     int *matC_d;
-    int numThreadsPerBlock, numBlocks;
 
     cudaMalloc((void**) &matA_d, M * N * sizeof(int));
     cudaMalloc((void**) &matB_d, K * N * sizeof(int));
@@ -79,8 +99,9 @@ void rmm_gpu(int *matA, int *matB, int *matC, int M, int N, int K)
 
     cudaEventRecord(comp_start);
     /* Launching the GPU kernel to do the computation goes here */
-    numThreadsPerBlock = 16 * 16;
-    numBlocks = (M/2 * K/2 + numThreadsPerBlock - 1) / numThreadsPerBlock;
+    dim3 numThreadsPerBlock(TILE, TILE);
+
+    dim3 numBlocks(((K/2)+TILE-1)/TILE, ((M/2)+TILE-1)/TILE);
     rmm_kernel <<< numBlocks, numThreadsPerBlock >>> (matA_d, matB_d, matC_d, M, N ,K);
 
     cudaEventRecord(comp_end);

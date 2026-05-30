@@ -1,6 +1,6 @@
 /*
 ============================================================================
-Filename    : rmm_v2.cu
+Filename    : rmm_v1_5.cu
 Authors     : Pablo Sarró Sánchez and Oscar Wohlfahrt
 SCIPERs		: 416086 and 416820
 ============================================================================
@@ -36,10 +36,12 @@ __global__ void rmm_kernel(int *matA, int *matB, int *matC, int M, int N, int K)
         int row = idx / (K / 2);
         int col = idx % (K/2);
         int sum = 0;
-        for(int kdx = 0; kdx < N; kdx++) {
-            int a_sum = matA[2*row * N + kdx] + matA[(2*row + 1) * N + kdx];
-            int b_sum = matB[2*col + kdx * K] + matB[2*col + 1 + kdx * K];
-            sum += a_sum * b_sum;
+        for(int aoff = 0; aoff < 2; aoff++) {
+            for(int boff = 0; boff < 2; boff++) {
+                for(int kdx = 0; kdx < N; kdx++) {
+                    sum += matA[(row*2 + aoff)*N + kdx] * matB[kdx*K + col*2 + boff];
+                }
+            }
         }
         matC[row*(K/2) + col] = sum;
     }

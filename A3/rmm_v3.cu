@@ -1,6 +1,6 @@
 /*
 ============================================================================
-Filename    : rmm_v3.cu
+Filename    : rmm_v2.cu
 Authors     : Pablo Sarró Sánchez and Oscar Wohlfahrt
 SCIPERs		: 416086 and 416820
 ============================================================================
@@ -11,14 +11,6 @@ SCIPERs		: 416086 and 416820
 #include <sys/time.h>
 #include <cuda_runtime.h>
 using namespace std;
-
-#ifndef BLOCK_X
-#define BLOCK_X 16
-#endif
-
-#ifndef BLOCK_Y
-#define BLOCK_Y 16
-#endif
 
 /* CPU Baseline */
 void rmm_cpu(int *matA, int *matB, int *matC, int M, int N, int K)
@@ -39,9 +31,10 @@ void rmm_cpu(int *matA, int *matB, int *matC, int M, int N, int K)
 
 
 __global__ void rmm_kernel(int *matA, int *matB, int *matC, int M, int N, int K) {
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    if (row < (M / 2) && col < (K / 2)) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < ((M / 2) * (K / 2))) {
+        int row = idx / (K / 2);
+        int col = idx % (K/2);
         int sum = 0;
         for(int kdx = 0; kdx < N; kdx++) {
             int a_sum = matA[2*row * N + kdx] + matA[(2*row + 1) * N + kdx];
@@ -68,6 +61,7 @@ void rmm_gpu(int *matA, int *matB, int *matC, int M, int N, int K)
     int *matA_d;
     int *matB_d;
     int *matC_d;
+    int numThreadsPerBlock, numBlocks;
 
     cudaMalloc((void**) &matA_d, M * N * sizeof(int));
     cudaMalloc((void**) &matB_d, K * N * sizeof(int));
@@ -83,9 +77,8 @@ void rmm_gpu(int *matA, int *matB, int *matC, int M, int N, int K)
 
     cudaEventRecord(comp_start);
     /* Launching the GPU kernel to do the computation goes here */
-    dim3 numThreadsPerBlock(BLOCK_X, BLOCK_Y);
-
-    dim3 numBlocks(((K/2)+numThreadsPerBlock.x-1)/numThreadsPerBlock.x, ((M/2)+numThreadsPerBlock.y-1)/numThreadsPerBlock.y);
+    numThreadsPerBlock = 16 * 16;
+    numBlocks = (M/2 * K/2 + numThreadsPerBlock - 1) / numThreadsPerBlock;
     rmm_kernel <<< numBlocks, numThreadsPerBlock >>> (matA_d, matB_d, matC_d, M, N ,K);
 
     cudaEventRecord(comp_end);
