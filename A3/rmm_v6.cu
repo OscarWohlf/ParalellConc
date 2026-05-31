@@ -13,7 +13,7 @@ SCIPERs		: 416086 and 416820
 using namespace std;
 
 #ifndef TILE
-#define TILE 32
+#define TILE 16
 #endif
 
 /* CPU Baseline */
